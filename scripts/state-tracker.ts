@@ -72,6 +72,17 @@ export async function isProcessed(videoId: string): Promise<boolean> {
 }
 
 /**
+ * Get the status of a video (success, failed, or null if not found)
+ */
+export async function getVideoStatus(
+  videoId: string
+): Promise<"success" | "failed" | null> {
+  const state = await readState();
+  const entry = state.processed.find((p) => p.videoId === videoId);
+  return entry?.status ?? null;
+}
+
+/**
  * Mark a video as processed
  */
 export async function markProcessed(

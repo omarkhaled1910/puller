@@ -4,6 +4,9 @@
 // Watches downloads/transcripts for new files and generates reels
 // ============================================================
 
+import { config } from "dotenv";
+config({ path: ".env.local" });
+
 import cron from "node-cron";
 import { promises as fs } from "fs";
 import path from "path";
@@ -18,6 +21,7 @@ import * as StateTracker from "./state-tracker";
 const CONFIG = {
   transcriptDir: path.join(process.cwd(), "downloads", "transcripts"),
   outputDir: path.join(process.cwd(), "downloads", "processed"),
+  llmResponsesDir: path.join(process.cwd(), "downloads", "llm-responses"), // For debugging
   cronSchedule: "*/5 * * * *", // Every 5 minutes
   reelConfig: {
     reelCount: 5,
@@ -173,8 +177,10 @@ async function parseTranscriptFile(
 
 /**
  * Process a single transcript file
+ * @param filePath - Path to the transcript file
+ * @param forceRetry - If true, skip the "already processed" check (for retries)
  */
-async function processTranscript(filePath: string): Promise<void> {
+async function processTranscript(filePath: string, forceRetry = false): Promise<void> {
   const filename = path.basename(filePath);
 
   try {
@@ -195,10 +201,10 @@ async function processTranscript(filePath: string): Promise<void> {
 
     const { videoId, segments } = parsed;
 
-    // Check if already processed
-    const alreadyProcessed = await StateTracker.isProcessed(videoId);
-    if (alreadyProcessed) {
-      LOGGER.debug(`Skipping ${videoId} - already processed`);
+    // Check if already successfully processed (failed jobs are ok to retry)
+    const status = await StateTracker.getVideoStatus(videoId);
+    if (status === "success" && !forceRetry) {
+      LOGGER.debug(`Skipping ${videoId} - already successfully processed`);
       return;
     }
 
@@ -209,6 +215,34 @@ async function processTranscript(filePath: string): Promise<void> {
 
     if ("error" in result) {
       LOGGER.error(`Failed to generate reels for ${videoId}:`, result.message);
+
+      // Log validation errors if available
+      if (result.validationErrors && result.validationErrors.length > 0) {
+        LOGGER.error("Validation errors:");
+        for (const err of result.validationErrors) {
+          LOGGER.error(`  - ${err.path}: ${err.message}`);
+        }
+      }
+
+      // Save raw LLM response for debugging
+      if (result.rawResponse) {
+        await ensureLLMResponsesDir();
+        const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+        const llmResponsePath = path.join(CONFIG.llmResponsesDir, `${videoId}-${timestamp}.json`);
+        await fs.writeFile(
+          llmResponsePath,
+          JSON.stringify({
+            videoId,
+            timestamp: new Date().toISOString(),
+            error: result.message,
+            validationErrors: result.validationErrors,
+            rawResponse: result.rawResponse,
+          }, null, 2),
+          "utf-8"
+        );
+        LOGGER.info(`Saved raw LLM response to: ${llmResponsePath}`);
+      }
+
       await StateTracker.markProcessed(
         videoId,
         filePath,
@@ -246,6 +280,13 @@ async function processTranscript(filePath: string): Promise<void> {
  */
 async function ensureOutputDir(): Promise<void> {
   await fs.mkdir(CONFIG.outputDir, { recursive: true });
+}
+
+/**
+ * Ensure LLM responses directory exists (for debugging)
+ */
+async function ensureLLMResponsesDir(): Promise<void> {
+  await fs.mkdir(CONFIG.llmResponsesDir, { recursive: true });
 }
 
 /**
@@ -295,8 +336,8 @@ async function retryFailedJobs(): Promise<void> {
         `${remainingRetries} retries remaining)`
       );
 
-      // Re-process the transcript
-      await processTranscript(job.transcriptPath);
+      // Re-process the transcript (forceRetry allows re-processing failed jobs)
+      await processTranscript(job.transcriptPath, true);
     }
 
   } catch (error) {

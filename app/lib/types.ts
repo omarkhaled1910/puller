@@ -113,6 +113,8 @@ export interface ReelsPlan {
 export interface ReelsError {
   error: string;
   message: string;
+  rawResponse?: unknown;  // Raw LLM response for debugging
+  validationErrors?: Array<{ path: string; message: string }>;  // Validation error details
 }
 
 // ============================================================
@@ -134,10 +136,13 @@ export interface MappedOutput {
   };
 }
 
+export type LLMProvider = "glm" | "claude" | "openai" | "custom";
+
 export interface LLMClientConfig {
   apiKey: string;
   baseURL?: string;
   model: string;
   temperature?: number;
   maxTokens?: number;
+  provider?: LLMProvider;
 }

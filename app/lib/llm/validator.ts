@@ -27,7 +27,7 @@ const LLMReelSegmentSchema = z.object({
   end: z.number().nonnegative("End time must be non-negative"),
   title: z.string().min(1, "Title is required").max(200, "Title too long"),
   summary: z.string().min(1, "Summary is required").max(500, "Summary too long"),
-  hook: z.string().min(1, "Hook is required").max(100, "Hook too long"),
+  hook: z.string().min(1, "Hook is required").max(200, "Hook too long"),
   confidence: z.number().min(0, "Confidence must be between 0 and 1").max(1, "Confidence must be between 0 and 1"),
 });
 

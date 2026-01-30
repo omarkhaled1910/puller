@@ -62,11 +62,18 @@ function buildSystemPrompt(config: ReelConfig): string {
   return `You are an expert content editor specializing in short-form video content.
 Your task is to analyze video transcripts and identify the best segments for creating viral social media reels.
 
+CRITICAL DURATION REQUIREMENTS:
+- Each segment MUST be between ${minDuration} and ${maxDuration} seconds long
+- Calculate duration as: end_time - start_time
+- EXAMPLE: start=0, end=45 → duration = 45 seconds ✓
+- EXAMPLE: start=0, end=15 → duration = 15 seconds ✗ TOO SHORT
+- EXAMPLE: start=120, end=195 → duration = 75 seconds ✗ TOO LONG
+
 IMPORTANT RULES:
 1. Identify exactly ${reelCount} distinct segments that would work well as standalone reels
-2. Each segment should be between ${minDuration} and ${maxDuration} seconds long
+2. Each segment MUST be ${minDuration}-${maxDuration} seconds - this is non-negotiable
 3. Segments must NOT overlap
-4. Each segment should have a strong hook at the beginning
+4. Each segment should have a strong hook at the beginning (under 200 characters)
 5. Prioritize segments with: surprising insights, emotional impact, or clear value
 6. Return ONLY valid JSON, no additional text or explanation
 
@@ -79,7 +86,7 @@ OUTPUT FORMAT (JSON only):
       "end": <end_time_in_seconds>,
       "title": "<catchy title for the reel>",
       "summary": "<1-2 sentence summary of what makes this segment engaging>",
-      "hook": "<the exact opening phrase or moment that grabs attention>",
+      "hook": "<the exact opening phrase or moment that grabs attention - keep it under 200 characters>",
       "confidence": <0.0 to 1.0 score indicating how strong this segment is>
     }
   ]
@@ -113,12 +120,20 @@ VIDEO INFORMATION:
 - Total Duration: ${formatTime(totalDuration)} (${Math.round(totalDuration)} seconds)
 - Transcript Segments: ${segmentCount}
 
+CRITICAL DURATION REQUIREMENTS - READ CAREFULLY:
+- Each segment MUST be between ${minDuration} and ${maxDuration} seconds
+- Duration = end - start
+- Valid examples: (start=0, end=${minDuration}) = ${minDuration}s ✓ | (start=100, end=${100 + maxDuration}) = ${maxDuration}s ✓
+- Invalid examples: (start=0, end=20) = 20s ✗ TOO SHORT | (start=0, end=90) = 90s ✗ TOO LONG
+- If you output segments outside ${minDuration}-${maxDuration} seconds, they will be REJECTED
+
 REQUIREMENTS:
 - Create exactly ${reelCount} segments
-- Each segment must be ${minDuration}-${maxDuration} seconds
+- Each segment MUST be ${minDuration}-${maxDuration} seconds (non-negotiable)
 - Segments must be sequential and non-overlapping
 - Focus on engaging, shareable moments
 - Assign confidence scores based on viral potential
+- Hooks must be under 200 characters
 
 TRANSCRIPT WITH TIMESTAMPS:
 ${transcript}

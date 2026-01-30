@@ -13,7 +13,7 @@ import type {
 } from "@/app/lib/types";
 import { mapToLLMInput } from "@/app/lib/llm/mapper";
 import { ReelsLLMClient, LLMClientError } from "@/app/lib/llm/client";
-import { validateReels, ValidationError } from "@/app/lib/llm/validator";
+import { validateReels } from "@/app/lib/llm/validator";
 
 const REELS_LOGGER = {
   debug: (...args: unknown[]) => console.log("[GenerateReels]", ...args),
@@ -42,11 +42,26 @@ export async function generateReels(
 
     REELS_LOGGER.info(`Starting reel generation for video ${videoId}`);
 
-    // Check API key
-    if (!process.env.ANTHROPIC_API_KEY) {
+    // Check API key based on provider
+    const provider = (process.env.LLM_PROVIDER ?? "glm") as "glm" | "claude" | "openai";
+    const apiKey =
+      provider === "glm"
+        ? process.env.GLM_API_KEY
+        : provider === "claude"
+        ? process.env.ANTHROPIC_API_KEY
+        : process.env.OPENAI_API_KEY;
+
+    const keyName =
+      provider === "glm"
+        ? "GLM_API_KEY"
+        : provider === "claude"
+        ? "ANTHROPIC_API_KEY"
+        : "OPENAI_API_KEY";
+
+    if (!apiKey) {
       return {
         error: "config_error",
-        message: "ANTHROPIC_API_KEY environment variable is not configured",
+        message: `${keyName} environment variable is not configured (set LLM_PROVIDER to switch providers)`,
       };
     }
 
@@ -127,15 +142,26 @@ export async function generateReels(
         finalConfig
       );
     } catch (error) {
-      if (error instanceof ValidationError) {
-        return {
-          error: "validation_error",
-          message: error.message,
-        };
+      // Extract validation errors if available
+      let validationErrors: Array<{ path: string; message: string }> | undefined;
+      if (error instanceof Error) {
+        const match = error.message.match(/LLM response validation failed: (.+)/);
+        if (match) {
+          // Parse the error message to extract individual errors
+          const messages = match[1].split(", ");
+          validationErrors = messages.map((msg, idx) => ({
+            path: `reels.${idx}`,
+            message: msg,
+          }));
+        }
       }
+
+      // Return error with raw LLM response for debugging
       return {
         error: "validation_error",
-        message: "Failed to validate LLM response",
+        message: error instanceof Error ? error.message : "Failed to validate LLM response",
+        rawResponse: llmResponse,
+        validationErrors,
       };
     }
 
